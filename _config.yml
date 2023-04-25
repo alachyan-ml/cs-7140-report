@@ -1,8 +1,8 @@
-title: Just the Docs Template
-description: A starter template for a Jeykll site using the Just the Docs theme!
+title: My ML Blog
+description: Aniket Lachyankar's Blog for Discussing ML topics
 theme: just-the-docs
 
-url: https://just-the-docs.github.io
+url: https://alachyan-ml.github.io/ml-blog
 
-aux_links:
-  Template Repository: https://github.com/just-the-docs/just-the-docs-template
+#aux_links:
+#  Template Repository: https://github.com/just-the-docs/just-the-docs-template
