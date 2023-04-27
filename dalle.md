@@ -155,4 +155,104 @@ The diagram below shows the structure of the Transformer model, here we see feat
 |:--:| 
 | *Transformer Model Diagram* taken from [[8]](https://arxiv.org/pdf/1706.03762.pdf) |
 
-This model utilizes a new module known as an Attention head, which computes the relevancy of one token in the data to any other token in the data. For more information on the calculation, and in the interest of saving time reading this article, please refer to Jay Alammar's [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/). 
+This model utilizes a new module known as an Attention head, which computes the relevancy of one token in the data to any other token in the data. For more information on the calculation, and in the interest of saving time reading this article, please refer to Jay Alammar's [The Illustrated Transformer[9]](https://jalammar.github.io/illustrated-transformer/). 
+
+This model is used largely in DALLE and DALLE-2 as a generative model, either for creating embeddings or directly for the generative task. 
+
+### DALLE-1
+
+An important part of image generation is the ability to condition the output of the model on natural language captions that describe what is desired of the output of the model. The first DALLE model was created by OpenAI to approach this task. Described in the paper [Zero-Shot Text-to-Image Generation[10]](https://arxiv.org/pdf/2102.12092.pdf). This model utilizes a few components for image generation that can be captioned on the :
+
+1. The 256x256 image tokens that are used as training data for the generative model are encoded into 32x32 grid of tokens which can each assume 8192 values that are encoded by an discrete Variational Autoencoder. 
+
+2. The image captions are encoded using Byte-Pair Encoding (BPE) which takes the most common bytes in a sequence and replaces them with a byte that is very uncommon which compresses the data significantly. This allows the most common phrases are represented as a single token as opposed to multiple tokens. These tokens are concatenated with the image tokens and passed to a transformer to model the joint distribution of the text and image tokens.
+
+In this case, GPT-3 is used as the transformer that autoregressively models the text and image captions that can be used by the dVAE decoder to generate real images. 
+
+| ![DALLE Model Results](assets/DALLE_results.png) | 
+|:--:| 
+| *DALLE-1 Model Results* taken from [[11]](https://arxiv.org/pdf/2112.10741v1.pdf) |
+
+When we take a look at the results of DALLE, the model performs fairly well at generating images that match the text, but the image quality and photorealism that is seen by other models like the DDPMs (in this case OpenAI's GLIDE diffusion model) or other GANs prove to be less than overwhelming. As a result, we need something that can handle the text-conditional image generation task with photorealistic output. In comes DALLE-2...
+
+## DALLE-2
+
+The focus of this article is the DALLE-2 model. We have spent a large part of the article describing various other models that all build to this model. The model is described in the paper [Hierarchical Text-Conditional Image Generation with CLIP Latents[12]](https://cdn.openai.com/papers/dall-e-2.pdf). 
+
+There are 2 major parts of the model that are used in creating the images based on the desired caption for the image: CLIP and unClip, which is made up of a prior model and the decoder. CLIP is a separate model that takes images and text and encodes both the image and text such that images with features similar to the relevant caption are in the same space. The prior model takes a caption and samples a CLIP embedding similar to the caption such that the features from the caption would be represented in the image. Finally the 
+
+| ![DALLE-2 Model Diagram](assets/DALLE_2_diag.png) | 
+|:--:| 
+| *DALLE-2 Model Diagram* taken from [[13]](https://cdn.openai.com/papers/dall-e-2.pdf) |
+
+First we will discuss CLIP as it is a powerful model for creating joint embeddings between images and text in the same vector space. 
+
+### CLIP
+
+Contrastive Learning Image Pretraining or CLIP is an OpenAI model introduced in [Learning Transferable Visual Models From Natural Language Supervision[14]](https://arxiv.org/pdf/2103.00020.pdf). As described before, the objective of the CLIP model is to learn a joint embedding space that places images and text together. The model is pretrained on the task of learning which caption works best with any image which proves to be very efficient in then allowing the model to then model downstream tasks like image classification in a zero shot nature because of the visual features learned by training the model on captions for images. 
+
+As we can see in the pretraining phase, we have 2 encoders which encode the images and text into embeddings which are then multiplied together to get a score. The model optimizes the embedding such that the text and image embeddings are maximized when the caption fits the image. This allows the model to learn what words actually look like in images and vice-versa. 
+
+| ![CLIP Model Diagram](assets/CLIP_diag.png) | 
+|:--:| 
+| *CLIP Model Diagram* taken from [[14]](https://arxiv.org/pdf/2103.00020.pdf) |
+
+In our case for DALLE-2 we are mainly interested in the embeddings generated by the trained model which represent the similarity between images and captions and represent visual features that are defined by natural language captions. 
+
+In the paper there is very simple example of the code that would be required for CLIP that shows how simple yet powerful a model can be at scale: 
+
+| ![CLIP Code ](assets/CLIP_code.png) | 
+|:--:| 
+| *CLIP Pseudocode Description* taken from [[14]](https://arxiv.org/pdf/2103.00020.pdf) |
+
+With CLIP, we will be able to generate embeddings for both text that represent images we would like or take image embeddings for the captions we would like. 
+
+### unCLIP
+
+In the second part of the model, described as unCLIP by the OpenAI paper, we see that this model utilizes two models for the purpose of taking the actual text caption that is being requested and generating the image that is requested. The model assumes that we are given pairs of $$(x,y)$$ with images $$x$$ and captions $$y$$. Next we have the image embeddings $$z_i$$ and $$z_t$$ that are generated from CLIP. As mentioned before, there are 2 parts of the model that we will discuss formally.
+
+- A prior $$P(z_i \mid y)$$ that produces CLIP image embeddings based on the caption. 
+- A decoder $$P(x \mid z_i, y)$$ that generates an image given a CLIP embedding which can also be conditioned on the text caption given to unCLIP. 
+
+These models come together to form a generative model:
+
+$$P(x \mid y) = P(x, z_i \mid y) = P(x \mid z_i, y) P(z_i \mid y) $$
+
+As we can see, the generative model that gives an image $$x$$ based on the caption $$y$$ decomposes into our 2 components which allows us to have high performance and diversity when we model these probabilities well. 
+
+### Prior 
+
+In the paper there are 2 prior models tested: an autoregressive model and a diffusion model.
+
+In the case of the Autoregressive prior, we utilize a transformer based model to predict the CLIP image embedding $$z_i$$ based on the caption $$y$$. The diffusion model prior takes $$z_i$$ and models it using the diffusion forward and backwards process while conditioned on caption $$y$$. In the interest of brevity, the specifics of the methods used for each method can be seen in the paper, but it is worth mentioning that the group decided that the diffusion model would be the more suitable solution given that it provided similar performance with much more computation.  
+
+### Decoder
+
+The decoder, which generates the image given the CLIP embedding $$z_i$$ which is designed by using another OpenAI model called GLIDE. This model is based on diffusion models, but conditions the foward process of the model on the output. 
+
+| ![GLIDE Diagram](assets/CLIP_code.png) | 
+|:--:| 
+| *GLIDE Model Diagram* taken from [[15]](https://www.assemblyai.com/blog/how-dall-e-2-actually-works/) |
+
+As we can see, the caption is passed to a transformer and the final token is used as a conditional token for the diffusion model to use in the noising process. This bakes in the caption to the training data that the backwards process model learns on. This provides high performance as the decoder becomes conditionally aware of the tokens that were used to describe the noisy image. 
+
+Another aspect of bringing the photorealistic part of the image generation task is to upsample the images using diffusion models as well. The output of the decoder is in 64x64 which is then upsampled to 256x256 and then 1024x1024. 
+
+Now when we put all these together, we are able to prompt DALLE-2 for any caption and get very photorealistic results from them as seen below with an example directly from the paper. 
+
+| ![DALLE-2 Results](assets/DALLE_2_sample.png) | 
+|:--:| 
+| *DALLE-2 Samples * taken from [[12]](https://cdn.openai.com/papers/dall-e-2.pdf) |
+
+## Remarks
+
+As we have seen, there are many developments in Generative AI and Image Generation that were required in bringing DALLE-2 to fruition. Without these developments, it would not have been possible to model the probabilities that are used by unCLIP to generate images from captions. When we look at the discussions of DALLE-2, there are a few limitations like its ability to understand semantics within captions as seen in the image below. 
+
+
+| ![DALLE-2 Errors](assets/DALLE_2_errors.png) | 
+|:--:| 
+| *DALLE-2 Problems with Semantic Captions * taken from [[12]](https://cdn.openai.com/papers/dall-e-2.pdf) |
+
+However these limitations could prove to be removed with stronger representations within the CLIP embedding spaces. As we allow the representational space that DALLE-2 uses, in this case CLIP, to become robust to things like orientation and specific features, we will find that the model will be good at even producing images for very complex captions, which would prove that we can model text and images in a joint space at a very high level. 
+
+One thing that I would suggest more than anything after reading this article is to try the model out yourself! Feel free to check it out at [OpenAI](https://labs.openai.com/)
